@@ -18,6 +18,17 @@ except ModuleNotFoundError as e:
     raise ModuleNotFoundError("No module named 'torch'. Torch is required to install this repo.") from e
 
 
+extra_deps = {
+    'dev': [
+        'pytest',
+        'toml',
+        'yapf',
+        'isort',
+        'yamllint',
+    ]
+}
+
+
 def package_files(prefix: str, directory: str, extension: str):
     # from https://stackoverflow.com/a/36693250
     paths = []
@@ -62,80 +73,69 @@ def check_cuda_torch_binary_vs_bare_metal(cuda_dir):
         )
 
 
-extra_deps = {
-    'dev': [
-        'pytest',
-        'toml',
-        'yapf',
-        'isort',
-        'yamllint',
-    ]
-}
-
 # ninja build does not work unless include_dirs are abs path
 this_dir = os.path.dirname(os.path.abspath(__file__))
 
 cmdclass = {}
 ext_modules = []
 
-# # Only install CUDA extensions if available
-# if 'cu' in torch.__version__:
-#     check_cuda_torch_binary_vs_bare_metal(CUDA_HOME)
+# Only install CUDA extensions if available
+if 'cu' in torch.__version__:
+    check_cuda_torch_binary_vs_bare_metal(CUDA_HOME)
 
-#     # Check, if ATen/CUDAGeneratorImpl.h is found, otherwise use ATen/cuda/CUDAGeneratorImpl.h
-#     # See https://github.com/pytorch/pytorch/pull/70650
-#     generator_flag = []
-#     torch_dir = torch.__path__[0]
-#     if os.path.exists(os.path.join(torch_dir, 'include', 'ATen', 'CUDAGeneratorImpl.h')):
-#         generator_flag = ['-DOLD_GENERATOR_PATH']
+    # Check, if ATen/CUDAGeneratorImpl.h is found, otherwise use ATen/cuda/CUDAGeneratorImpl.h
+    # See https://github.com/pytorch/pytorch/pull/70650
+    generator_flag = []
+    torch_dir = torch.__path__[0]
+    if os.path.exists(os.path.join(torch_dir, 'include', 'ATen', 'CUDAGeneratorImpl.h')):
+        generator_flag = ['-DOLD_GENERATOR_PATH']
 
-#     # Check, if CUDA11 is installed for compute capability 8.0
-#     cc_flag = []
-#     _, bare_metal_version = get_cuda_bare_metal_version(CUDA_HOME)
-#     cc_flag.append("-gencode")
-#     cc_flag.append("arch=compute_70,code=sm_70")
-#     cc_flag.append("-gencode")
-#     cc_flag.append("arch=compute_80,code=sm_80")
-#     if bare_metal_version >= Version("11.1"):
-#         cc_flag.append("-gencode")
-#         cc_flag.append("arch=compute_86,code=sm_86")
-#     if bare_metal_version >= Version("11.8"):
-#         cc_flag.append("-gencode")
-#         cc_flag.append("arch=compute_90,code=sm_90")
+    # Check, if CUDA11 is installed for compute capability 8.0
+    cc_flag = []
+    _, bare_metal_version = get_cuda_bare_metal_version(CUDA_HOME)
+    cc_flag.append("-gencode")
+    cc_flag.append("arch=compute_70,code=sm_70")
+    cc_flag.append("-gencode")
+    cc_flag.append("arch=compute_80,code=sm_80")
+    if bare_metal_version >= Version("11.1"):
+        cc_flag.append("-gencode")
+        cc_flag.append("arch=compute_86,code=sm_86")
+    if bare_metal_version >= Version("11.8"):
+        cc_flag.append("-gencode")
+        cc_flag.append("arch=compute_90,code=sm_90")
 
-#     ext_modules.append(
-#         CUDAExtension(
-#             name='my_cuda_kernels',
-#             sources=[
-#                 'csrc/example_op/add.cu',
-#                 'csrc/example_op/add.cpp',
-#             ],
-#             extra_compile_args={
-#                 'cxx': ['-O3'] + generator_flag,
-#                 'nvcc':
-#                     append_nvcc_threads([
-#                         '-O3',
-#                         # uncomment these if you hit errors resulting from
-#                         # PyTorch and CUDA independently implementing slightly
-#                         # different [b]f16 support
-#                         # '-U__CUDA_NO_HALF_OPERATORS__',
-#                         # '-U__CUDA_NO_HALF_CONVERSIONS__',
-#                         # '-U__CUDA_NO_BFLOAT16_OPERATORS__',
-#                         # '-U__CUDA_NO_BFLOAT16_CONVERSIONS__',
-#                         # '-U__CUDA_NO_BFLOAT162_OPERATORS__',
-#                         # '-U__CUDA_NO_BFLOAT162_CONVERSIONS__',
-#                         '--expt-relaxed-constexpr',
-#                         '--expt-extended-lambda',
-#                         '--use_fast_math',
-#                     ] + generator_flag + cc_flag),
-#             },
-#             include_dirs=[os.path.join(this_dir, 'csrc', 'example_op')],
-#         ))
-#     cmdclass = {'build_ext': BuildExtension}
-# else:
-#     warnings.warn('Warning: No CUDA devices; cuda code will not be compiled.')
+    ext_modules.append(
+        CUDAExtension(
+            name='my_cuda_kernels',
+            sources=[
+                'csrc/example_op/add.cu',
+                'csrc/example_op/add.cpp',
+            ],
+            extra_compile_args={
+                'cxx': ['-O3'] + generator_flag,
+                'nvcc':
+                    append_nvcc_threads([
+                        '-O3',
+                        # uncomment these if you hit errors resulting from
+                        # PyTorch and CUDA independently implementing slightly
+                        # different [b]f16 support
+                        # '-U__CUDA_NO_HALF_OPERATORS__',
+                        # '-U__CUDA_NO_HALF_CONVERSIONS__',
+                        # '-U__CUDA_NO_BFLOAT16_OPERATORS__',
+                        # '-U__CUDA_NO_BFLOAT16_CONVERSIONS__',
+                        # '-U__CUDA_NO_BFLOAT162_OPERATORS__',
+                        # '-U__CUDA_NO_BFLOAT162_CONVERSIONS__',
+                        '--expt-relaxed-constexpr',
+                        '--expt-extended-lambda',
+                        '--use_fast_math',
+                    ] + generator_flag + cc_flag),
+            },
+            include_dirs=[os.path.join(this_dir, 'csrc', 'example_op')],
+        ))
+    cmdclass = {'build_ext': BuildExtension}
+else:
+    warnings.warn('Warning: No CUDA devices; cuda code will not be compiled.')
 
-# Set up performance repo with applicable extensions
 setup(
     name='cuda_ext_example',
     version='0.0.1',
@@ -150,11 +150,10 @@ setup(
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
-        # 'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.11',
     ],
-    # install_requires=install_requires,
-    # extras_require=extra_deps,
+    extras_require=extra_deps,
     python_requires='>=3.7',
-    # ext_modules=ext_modules,
-    # cmdclass=cmdclass,
+    ext_modules=ext_modules,
+    cmdclass=cmdclass,
 )
