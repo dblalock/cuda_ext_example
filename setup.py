@@ -5,8 +5,7 @@ import subprocess
 import warnings
 from packaging.version import parse, Version
 
-import setuptools
-from setuptools import setup
+from setuptools import setup, find_packages
 
 PACKAGE_NAME = 'cuda_ext_example'
 
@@ -17,6 +16,17 @@ try:
     is_torch_installed = True
 except ModuleNotFoundError as e:
     raise ModuleNotFoundError("No module named 'torch'. Torch is required to install this repo.") from e
+
+
+extra_deps = {
+    'dev': [
+        'pytest',
+        'toml',
+        'yapf',
+        'isort',
+        'yamllint',
+    ]
+}
 
 
 def package_files(prefix: str, directory: str, extension: str):
@@ -62,17 +72,6 @@ def check_cuda_torch_binary_vs_bare_metal(cuda_dir):
             "You can try commenting out this check (at your own risk)."
         )
 
-install_requires = ['torch>=1.13.1', 'packaging']
-
-extra_deps = {
-    'dev': [
-        'pytest',
-        'toml',
-        'yapf',
-        'isort',
-        'yamllint',
-    ]
-}
 
 # ninja build does not work unless include_dirs are abs path
 this_dir = os.path.dirname(os.path.abspath(__file__))
@@ -135,11 +134,8 @@ if 'cu' in torch.__version__:
         ))
     cmdclass = {'build_ext': BuildExtension}
 else:
-    warnings.warn(
-        'Warning: Torch did not find available GPUs on this system. Certain algorithms in this repository will not be available.'
-    )
+    warnings.warn('Warning: No CUDA devices; cuda code will not be compiled.')
 
-# Set up performance repo with applicable extensions
 setup(
     name='cuda_ext_example',
     version='0.0.1',
@@ -147,7 +143,7 @@ setup(
     author_email='davis@mosaicml.com',
     description="simple example project that builds a PyTorch CUDA extension",
     url='https://github.com/dblalock/cuda_ext_example',
-    packages=setuptools.find_packages(exclude=['tests*']),
+    packages=find_packages(exclude=['tests*']),
     classifiers=[
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.7',
@@ -156,7 +152,6 @@ setup(
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
     ],
-    install_requires=install_requires,
     extras_require=extra_deps,
     python_requires='>=3.7',
     ext_modules=ext_modules,
