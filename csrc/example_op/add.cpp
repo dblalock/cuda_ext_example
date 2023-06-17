@@ -2,8 +2,7 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <torch/extension.h>
 
-#include "cpp/src/add.cuh"
-#include "cpp/src/utils.hpp"
+// #include "cpp/src/add.cuh"
 
 template <typename Dtype>
 void AddGPU(at::Tensor in_a, at::Tensor in_b, at::Tensor out_c) {
