@@ -8,7 +8,6 @@ void add_wrapper(at::Tensor in_a, at::Tensor in_b, at::Tensor out_c, int block_s
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
-// template <typename scalar_t>
 void add(at::Tensor in_a, at::Tensor in_b, at::Tensor out_c, int block_size = 64) {
     CHECK_INPUT(in_a);
     CHECK_INPUT(in_b);
@@ -18,5 +17,5 @@ void add(at::Tensor in_a, at::Tensor in_b, at::Tensor out_c, int block_size = 64
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
-    m.def("add", &add, "Addition op");
+    m.def("add", &add, "Elementwise addition op");
 }

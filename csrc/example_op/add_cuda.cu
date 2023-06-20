@@ -35,8 +35,9 @@ void add_wrapper(at::Tensor in_a, at::Tensor in_b, at::Tensor out_c, int block_s
     // you'd think AT_DISPATCH_ALL_TYPES would include fp16 and bf16, but it
     // doesn't. Also, this macro still doesn't include bool, although
     // that's probably for the best.
-    // AT_DISPATCH_ALL_TYPES_AND2(at::ScalarType::Half, at::ScalarType::BFloat16,
-    AT_DISPATCH_FLOATING_TYPES(in_a.type(), "add_cuda", ([&] {
+    // AT_DISPATCH_FLOATING_TYPES(
+    AT_DISPATCH_ALL_TYPES_AND2(at::ScalarType::Half, at::ScalarType::BFloat16,
+        in_a.type(), "add_cuda", ([&] {
             _add_kernel<scalar_t><<<grid_shape, block_size>>>(
                 AS_DENSE_1D(in_a), AS_DENSE_1D(in_b), AS_DENSE_1D(out_c), N);
     }));
