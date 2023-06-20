@@ -90,7 +90,7 @@ if 'cu' in torch.__version__:
     if os.path.exists(os.path.join(torch_dir, 'include', 'ATen', 'CUDAGeneratorImpl.h')):
         generator_flag = ['-DOLD_GENERATOR_PATH']
 
-    # Check, if CUDA11 is installed for compute capability 8.0
+    # generate code for the latest CUDA versions we can
     cc_flag = []
     _, bare_metal_version = get_cuda_bare_metal_version(CUDA_HOME)
     cc_flag.append("-gencode")

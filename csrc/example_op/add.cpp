@@ -2,7 +2,10 @@
 #include <torch/extension.h>
 
 // forward declare public function from cuda file
-void add_wrapper(at::Tensor in_a, at::Tensor in_b, at::Tensor out_c, int block_size = 64);
+void add_wrapper(const at::Tensor in_a,
+                 const at::Tensor in_b,
+                 at::Tensor out_c,
+                 int block_size);
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")

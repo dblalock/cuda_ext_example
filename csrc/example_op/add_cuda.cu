@@ -19,6 +19,9 @@ __global__ void _add_kernel(const Dense1d<scalar_t> a,
                             size_t N)
 {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // grid stride loop to allow grid size smaller than numel; see:
+    // https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
     int stride = blockDim.x * gridDim.x;
     for (int i = index; i < N; i += stride) {
         c[i] = a[i] + b[i];
@@ -27,9 +30,17 @@ __global__ void _add_kernel(const Dense1d<scalar_t> a,
 
 } // anon namespace
 
-void add_wrapper(at::Tensor in_a, at::Tensor in_b, at::Tensor out_c, int block_size = 64) {
+size_t div_round_up(size_t x, size_t y) {
+    return (x + y - 1) / y;
+}
+
+void add_wrapper(const at::Tensor in_a,
+                 const at::Tensor in_b,
+                 at::Tensor out_c,
+                 int block_size = 64)
+{
     size_t N = in_a.numel();
-    dim3 grid_shape = N / block_size;
+    dim3 grid_shape = div_round_up(N, block_size);
     // for available dispatch macro options, see here:
     // https:// github.com/pytorch/pytorch/blob/a2988c9e6ac281c2bf88eefde7fdd8ead44a8b36/aten/src/ATen/Dispatch.h
     // you'd think AT_DISPATCH_ALL_TYPES would include fp16 and bf16, but it
