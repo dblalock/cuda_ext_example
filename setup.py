@@ -108,8 +108,8 @@ if 'cu' in torch.__version__:
         CUDAExtension(
             name='_my_cuda_kernels',
             sources=[
-                'csrc/example_op/add_cuda.cu',
-                'csrc/example_op/add.cpp',
+                'csrc/add_cuda.cu',
+                'csrc/add.cpp',
             ],
             extra_compile_args={
                 'cxx': ['-O3'] + generator_flag,

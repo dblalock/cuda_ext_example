@@ -55,12 +55,13 @@ __global__ void _add_fast_kernel(const Dense1d<scalar_t> a,
         volatile load_as_dtype a_vec = a_ptr[i];
         volatile load_as_dtype b_vec = b_ptr[i];
         volatile load_as_dtype c_vec = c_ptr[i];
-        a_vec_ptr = reinterpret_cast<scalar_t>(&a_vec);
-        b_vec_ptr = reinterpret_cast<scalar_t>(&b_vec);
-        c_vec_ptr = reinterpret_cast<scalar_t>(&c_vec);
+        a_vec_ptr = reinterpret_cast<scalar_t*>(&a_vec);
+        b_vec_ptr = reinterpret_cast<scalar_t*>(&b_vec);
+        c_vec_ptr = reinterpret_cast<scalar_t*>(&c_vec);
         for (int ii = 0; ii < elems_per_read; ii++) {
-            c_vec_ptr[ii] = a_vec_ptr[ii] + b_vec_ptr[ii]
+            c_vec_ptr[ii] = a_vec_ptr[ii] + b_vec_ptr[ii];
         }
+        c_ptr[i] = c_vec; // hopefully force vectorized store
     }
     // handle trailing elems, if any, using scalar loads in the true dtype
     if (index_in_grid < num_stragglers) {
