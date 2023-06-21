@@ -2,13 +2,15 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
+using index_t = uint32_t;
+
 // TODO inline func instead of macro
-#define AS_DENSE_ND(TENSOR, NDIMS) (TENSOR).packed_accessor<scalar_t, NDIMS, torch::RestrictPtrTraits, size_t>()
+#define AS_DENSE_ND(TENSOR, NDIMS) (TENSOR).packed_accessor<scalar_t, NDIMS, torch::RestrictPtrTraits, index_t>()
 #define AS_DENSE_1D(TENSOR) AS_DENSE_ND(TENSOR, 1)
 #define AS_DENSE_2D(TENSOR) AS_DENSE_ND(TENSOR, 2)
 #define AS_DENSE_3D(TENSOR) AS_DENSE_ND(TENSOR, 3)
 
-template<typename T> using Dense1d = torch::PackedTensorAccessor<T, 1, torch::RestrictPtrTraits, size_t>;
+template<typename T> using Dense1d = torch::PackedTensorAccessor<T, 1, torch::RestrictPtrTraits, index_t>;
 
 namespace {
 
