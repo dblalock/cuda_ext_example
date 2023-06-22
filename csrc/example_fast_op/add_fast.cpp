@@ -12,7 +12,7 @@ void add_fast_wrapper(const at::Tensor in_a,
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
-void add(at::Tensor in_a, at::Tensor in_b, at::Tensor out_c,
+void add_fast(at::Tensor in_a, at::Tensor in_b, at::Tensor out_c,
          int block_size = 64, int bytes_per_thread = 4)
 {
     CHECK_INPUT(in_a);

@@ -122,7 +122,7 @@ inline int num_cuda_cores() {
     return props.multiProcessorCount;
 }
 
-void add_wrapper(const at::Tensor in_a,
+void add_fast_wrapper(const at::Tensor in_a,
                  const at::Tensor in_b,
                  at::Tensor out_c,
                  int block_size,
