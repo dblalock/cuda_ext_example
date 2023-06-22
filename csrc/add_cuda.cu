@@ -2,15 +2,15 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
-using index_t = uint32_t;
+// using index_t = uint32_t;
 
 // TODO inline func instead of macro
-#define AS_DENSE_ND(TENSOR, NDIMS) (TENSOR).packed_accessor<scalar_t, NDIMS, torch::RestrictPtrTraits, index_t>()
+#define AS_DENSE_ND(TENSOR, NDIMS) (TENSOR).packed_accessor32<scalar_t, NDIMS, torch::RestrictPtrTraits>()
 #define AS_DENSE_1D(TENSOR) AS_DENSE_ND(TENSOR, 1)
 #define AS_DENSE_2D(TENSOR) AS_DENSE_ND(TENSOR, 2)
 #define AS_DENSE_3D(TENSOR) AS_DENSE_ND(TENSOR, 3)
 
-template<typename T> using Dense1d = torch::PackedTensorAccessor<T, 1, torch::RestrictPtrTraits, index_t>;
+template<typename T> using Dense1d = torch::PackedTensorAccessor32<T, 1, torch::RestrictPtrTraits>;
 
 namespace {
 
@@ -50,7 +50,7 @@ void add_wrapper(const at::Tensor in_a,
     // that's probably for the best.
     // AT_DISPATCH_FLOATING_TYPES(
     AT_DISPATCH_ALL_TYPES_AND2(at::ScalarType::Half, at::ScalarType::BFloat16,
-        in_a.type(), "add_cuda", ([&] {
+        in_a.scalar_type(), "add_cuda", ([&] {
             _add_kernel<scalar_t><<<grid_shape, block_size>>>(
                 AS_DENSE_1D(in_a), AS_DENSE_1D(in_b), AS_DENSE_1D(out_c), N);
     }));

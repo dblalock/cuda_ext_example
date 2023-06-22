@@ -3,10 +3,8 @@
 #include <cuda_runtime.h>
 #include <cmath>
 
-using index_t = uint32_t;
-
 // TODO inline func instead of macro
-#define AS_DENSE_ND(TENSOR, NDIMS) ((TENSOR).packed_accessor<scalar_t, NDIMS, torch::RestrictPtrTraits, index_t>())
+#define AS_DENSE_ND(TENSOR, NDIMS) ((TENSOR).packed_accessor32<scalar_t, NDIMS, torch::RestrictPtrTraits>())
 #define AS_DENSE_1D(TENSOR) AS_DENSE_ND(TENSOR, 1)
 #define AS_DENSE_2D(TENSOR) AS_DENSE_ND(TENSOR, 2)
 #define AS_DENSE_3D(TENSOR) AS_DENSE_ND(TENSOR, 3)
@@ -14,7 +12,7 @@ using index_t = uint32_t;
 
 namespace {
 
-template<typename T> using Dense1d = torch::PackedTensorAccessor<T, 1, torch::RestrictPtrTraits, index_t>;
+template<typename T> using Dense1d = torch::PackedTensorAccessor32<T, 1, torch::RestrictPtrTraits>;
 
 template <int bytes_per_elem> struct byte_count_traits {};
 
@@ -28,7 +26,7 @@ template<typename scalar_t, int bytes_per_thread>
 __global__ void _add_fast_kernel(const Dense1d<scalar_t> a,
                                  const Dense1d<scalar_t> b,
                                  Dense1d<scalar_t> c,
-                                 index_t N) {
+                                 size_t N) {
     static constexpr auto elem_sz = sizeof(a[0]);
     static constexpr auto elems_per_read = bytes_per_thread / elem_sz;
     // static_assert(bytes_per_thread >= elem_sz);
@@ -79,7 +77,7 @@ template<typename scalar_t>
 void _add_fast_static_bytes_per_kernel(const Dense1d<scalar_t> a,
                                        const Dense1d<scalar_t> b,
                                        Dense1d<scalar_t> c,
-                                       index_t N,
+                                       size_t N,
                                        size_t bytes_per_thread,
                                        size_t grid_size,
                                        size_t block_size) {
@@ -93,9 +91,9 @@ void _add_fast_static_bytes_per_kernel(const Dense1d<scalar_t> a,
     dim3 grid_shape = grid_size;
     dim3 block_shape = block_size;
     switch (bytes_per_thread) {
-    // case 1:
-    //     _add_fast_kernel<scalar_t, 1><<<grid_shape, block_shape>>>(a, b, c, N);
-    //     break;
+    case 1:
+        _add_fast_kernel<scalar_t, 1><<<grid_shape, block_shape>>>(a, b, c, N);
+        break;
     case 2:
         _add_fast_kernel<scalar_t, 2><<<grid_shape, block_shape>>>(a, b, c, N);
         break;
