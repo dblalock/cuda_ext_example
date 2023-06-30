@@ -18,20 +18,20 @@ template <int bytes_per_elem> struct byte_count_traits {};
 
 template<> struct byte_count_traits<1> { using dtype = uint8_t; };
 template<> struct byte_count_traits<2> { using dtype = uint16_t; };
-template<> struct byte_count_traits<4> { using dtype = uint32_t; };
-template<> struct byte_count_traits<8> { using dtype = uint64_t; };
-template<> struct byte_count_traits<16> { using dtype = double2; }; // cuda vec dtype
+template<> struct byte_count_traits<4> { using dtype = float; };
+template<> struct byte_count_traits<8> { using dtype = float2; };
+template<> struct byte_count_traits<16> { using dtype = float4; }; // cuda vec dtype
 
 template<typename scalar_t, int bytes_per_thread>
 __global__ void _add_fast_kernel(const Dense1d<scalar_t> a,
                                  const Dense1d<scalar_t> b,
                                  Dense1d<scalar_t> c,
-                                 size_t N) {
-    using load_as_dtype = typename byte_count_traits<bytes_per_thread>::dtype;
+                                 size_t N)
+{
     static constexpr auto elem_sz = sizeof(a[0]);
-    static_assert(bytes_per_thread >= elem_sz);
     static constexpr auto elems_per_read = bytes_per_thread / elem_sz;
-
+    // static_assert(bytes_per_thread >= elem_sz);
+    using load_as_dtype = typename byte_count_traits<bytes_per_thread>::dtype;
     auto a_ptr = reinterpret_cast<const load_as_dtype*>(&a[0]);
     auto b_ptr = reinterpret_cast<const load_as_dtype*>(&b[0]);
     auto c_ptr = reinterpret_cast<load_as_dtype*>(&c[0]);
@@ -53,38 +53,17 @@ __global__ void _add_fast_kernel(const Dense1d<scalar_t> a,
         // const volatile load_as_dtype a_vec = a_ptr[i];
         // const volatile load_as_dtype b_vec = b_ptr[i];
         // volatile load_as_dtype c_vec = c_ptr[i];
-        const load_as_dtype a_vec = __ldg(&a_ptr[i]);
-        const load_as_dtype b_vec = __ldg(&b_ptr[i]);
-        load_as_dtype c_vec = __ldg(&c_ptr[i]);
-
-        // version that runs correctly, but super slowly
-        // auto a_vec_ptr = reinterpret_cast<const scalar_t*>(&a_vec);
-        // auto b_vec_ptr = reinterpret_cast<const scalar_t*>(&b_vec);
-        // auto c_vec_ptr = reinterpret_cast<scalar_t*>(&c_vec);
-        // for (int ii = 0; ii < elems_per_read; ii++) {
-        //     c_vec_ptr[ii] = a_vec_ptr[ii] + b_vec_ptr[ii];
-        // }
-        // // c_ptr[i] = *reinterpret_cast<load_as_dtype*>(&c_vec);  // cast to rm volatile
-        // c_ptr[i] = c_vec;
-
-        // version that hopefully runs fast?
-        scalar_t a_ar[elems_per_read];
-        scalar_t b_ar[elems_per_read];
-        scalar_t c_ar[elems_per_read];
-        std::memcpy(&a_ar, &a_vec, sizeof(load_as_dtype));
-        std::memcpy(&b_ar, &b_vec, sizeof(load_as_dtype));
-        std::memcpy(&c_ar, &c_vec, sizeof(load_as_dtype));
-
-        // auto a_vec_ar = reinterpret_cast<scalar_t[elems_per_read]>(&a_vec);
-        // auto b_vec_ar = reinterpret_cast<scalar_t[elems_per_read]>(&b_vec);
-        // auto c_vec_ar = reinterpret_cast<scalar_t[elems_per_read]>(&c_vec);
+        const load_as_dtype a_vec = a_ptr[i];
+        const load_as_dtype b_vec = b_ptr[i];
+        load_as_dtype c_vec = c_ptr[i];
+        auto a_vec_ptr = reinterpret_cast<const scalar_t*>(&a_vec);
+        auto b_vec_ptr = reinterpret_cast<const scalar_t*>(&b_vec);
+        auto c_vec_ptr = reinterpret_cast<scalar_t*>(&c_vec);
         for (int ii = 0; ii < elems_per_read; ii++) {
-            c_ar[ii] = a_ar[ii] + b_ar[ii];
+            c_vec_ptr[ii] = a_vec_ptr[ii] + b_vec_ptr[ii];
         }
-        // c_ptr[i] = *reinterpret_cast<load_as_dtype*>(&c_vec);  // cast to rm
-        // volatile
-        std::memcpy(&c_ptr[i], &c_ar, sizeof(load_as_dtype));
-        // c_ptr[i] = c_vec_ar;
+        // c_ptr[i] = *reinterpret_cast<load_as_dtype*>(&c_vec);  // cast to rm volatile
+        c_ptr[i] = c_vec;
     }
     // handle trailing elems, if any, using scalar loads in the true dtype
     if (index_in_grid < num_stragglers) {
@@ -92,6 +71,48 @@ __global__ void _add_fast_kernel(const Dense1d<scalar_t> a,
         c[idx] = a[idx] + b[idx];
     }
 }
+
+// __global__ void _add_fast_f32(const Dense1d<float> a,
+//                               const Dense1d<float> b,
+//                               Dense1d<float> c, size_t N)
+// {
+//     using load_as_dtype = float2;
+//     static constexpr size_t elem_sz = sizeof(float);
+//     static constexpr size_t bytes_per_thread = sizeof(load_as_dtype);
+//     static constexpr size_t elems_per_read = bytes_per_thread / elem_sz;
+//     static_assert(elems_per_read == 1 || elems_per_read == 2 || elems_per_read == 4);
+
+//     auto a_ptr = reinterpret_cast<const load_as_dtype*>(&a[0]);
+//     auto b_ptr = reinterpret_cast<const load_as_dtype*>(&b[0]);
+//     auto c_ptr = reinterpret_cast<load_as_dtype*>(&c[0]);
+
+//     int total_vec_reads = N * elem_sz / bytes_per_thread;
+//     int num_non_stragglers = total_vec_reads * elems_per_read;
+//     int num_stragglers = N - num_non_stragglers;
+//     int index_in_grid = blockIdx.x * blockDim.x + threadIdx.x;
+
+//     // grid stride loop to allow grid size smaller than numel; see:
+//     // https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
+//     int grid_numel = blockDim.x * gridDim.x;
+//     for (int i = index_in_grid; i < total_vec_reads; i += grid_numel) {
+//         const load_as_dtype a = __ldg(&a_ptr[i]);
+//         const load_as_dtype b = __ldg(&b_ptr[i]);
+//         load_as_dtype c = __ldg(&c_ptr[i]);
+//         switch (elems_per_read) {
+//         case 1:
+//             c.x = a.x + b.x;
+//         case 2:
+//             c.y = a.y + b.y;
+//         case 4: // makes it not compile since `error: class "float2" has no member "z"`
+//             c.z = a.z + b.z;
+//             c.w = a.x + b.w;
+//         }
+//     }
+//     if (index_in_grid < num_stragglers) {
+//         auto idx = num_non_stragglers + index_in_grid;
+//         c[idx] = a[idx] + b[idx];
+//     }
+// }
 
 }  // anon namespace
 
@@ -113,12 +134,12 @@ void _add_fast_static_bytes_per_kernel(const Dense1d<scalar_t> a,
     dim3 grid_shape = grid_size;
     dim3 block_shape = block_size;
     switch (bytes_per_thread) {
-    // case 1:
-    //     _add_fast_kernel<scalar_t, 1><<<grid_shape, block_shape>>>(a, b, c, N);
-    //     break;
-    // case 2:
-    //     _add_fast_kernel<scalar_t, 2><<<grid_shape, block_shape>>>(a, b, c, N);
-    //     break;
+    case 1:
+        _add_fast_kernel<scalar_t, 1><<<grid_shape, block_shape>>>(a, b, c, N);
+        break;
+    case 2:
+        _add_fast_kernel<scalar_t, 2><<<grid_shape, block_shape>>>(a, b, c, N);
+        break;
     case 4:
         _add_fast_kernel<scalar_t, 4><<<grid_shape, block_shape>>>(a, b, c, N);
         break;
@@ -174,7 +195,7 @@ void add_fast_wrapper(const at::Tensor in_a, const at::Tensor in_b,
     // dtypes to cpp types.
         // in_a.type(), "add_fast_cuda",
     // AT_DISPATCH_CASE(at::ScalarType::Float, [&] {
-    // AT_DISPATCH_SWITCH(in_a.type(), "add_fast_cuda",
+    // AT_DISPATCH_SWITCH(in_a.scalar_type(), "add_fast_cuda",
     //     AT_DISPATCH_CASE_FLOATING_TYPES([&] {
     //         _add_fast_static_bytes_per_kernel<scalar_t>(
     //             AS_DENSE_1D(in_a), AS_DENSE_1D(in_b),
@@ -183,11 +204,12 @@ void add_fast_wrapper(const at::Tensor in_a, const at::Tensor in_b,
     //         };
     //     )
     // );
-    const auto& the_type = in_a.type();
+    // const auto& the_type = in_a.type();
     switch (in_a.scalar_type()) {
     case at::ScalarType::Float:
         using scalar_t = float;
-        // at::ScalarType _st = ::detail::scalar_type(the_type);
+        // _add_fast_f32(
+        //     AS_DENSE_1D(in_a), AS_DENSE_1D(in_b), AS_DENSE_1D(out_c), N);
         _add_fast_static_bytes_per_kernel<scalar_t>(
             AS_DENSE_1D(in_a), AS_DENSE_1D(in_b), AS_DENSE_1D(out_c), N,
             bytes_per_thread, num_blocks, block_size);

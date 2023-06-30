@@ -22,3 +22,4 @@ def test_fast_add(shape: Tuple[int], dtype: torch.dtype):
     a = torch.randint(10, size=shape, dtype=dtype, device='cuda')
     b = torch.randint(10, size=shape, dtype=dtype, device='cuda')
     torch.testing.assert_close(a + b, ours.my_fast_add(a, b))
+

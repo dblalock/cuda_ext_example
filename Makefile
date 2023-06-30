@@ -227,7 +227,7 @@ $(STATIC_LIB): $(OBJS) $(CU_OBJS) | $(OBJ_DIR)
 
 .PHONY: clean-cpp
 clean-cpp:  ## remove C++ build outputs
-	@- $(RM) -rf $(OBJ_DIR) build dist
+	@- $(RM) -rf $(OBJ_DIR) build dist *.so
 
 # to get clang-tidy on macos, `brew install llvm`
 .PHONY: lint-cpp
