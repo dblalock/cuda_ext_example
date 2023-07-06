@@ -93,7 +93,109 @@ __global__ void _add_fast_kernel(const Dense1d<scalar_t> a,
     }
 }
 
-}  // anon namespace
+__global__ void _add_fast_f32(const float* __restrict__ a_tensor,
+                              const float* __restrict__ b_tensor,
+                              float* __restrict__ c_tensor,
+                              size_t N)
+{
+    using load_as_dtype = float4;
+    static constexpr size_t elem_sz = sizeof(float);
+    static constexpr size_t bytes_per_thread = sizeof(load_as_dtype);
+    static constexpr size_t elems_per_read = bytes_per_thread / elem_sz;
+    static_assert(elems_per_read == 1 || elems_per_read == 2 ||
+                  elems_per_read == 4);
+
+    auto a_ptr = reinterpret_cast<const load_as_dtype*>(&a_tensor[0]);
+    auto b_ptr = reinterpret_cast<const load_as_dtype*>(&b_tensor[0]);
+    auto c_ptr = reinterpret_cast<load_as_dtype*>(&c_tensor[0]);
+
+    auto total_vec_reads = N / elems_per_read;
+    auto num_non_stragglers = total_vec_reads * elems_per_read;
+    auto num_stragglers = N - num_non_stragglers;
+    auto index_in_grid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // grid stride loop to allow grid size smaller than numel; see:
+    // https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
+    auto grid_numel = blockDim.x * gridDim.x;
+    for (int i = index_in_grid; i < total_vec_reads; i += grid_numel) {
+        const load_as_dtype a = __ldg(&a_ptr[i]);
+        const load_as_dtype b = __ldg(&b_ptr[i]);
+        load_as_dtype c = c_ptr[i];
+
+        c.x = a.x + b.x;
+        c.y = a.y + b.y;
+        c.z = a.z + b.z;
+        c.w = a.w + b.w;
+        c_ptr[i] = c;
+        // switch (elems_per_read) {
+        //     case 1:
+        //         c.x = a.x + b.x;
+        //     case 2:
+        //         c.y = a.y + b.y;
+        //     case 4:
+        //         // makes it not compile with float2 loads since
+        //         // `error: class "float2" has no member "z"`
+        //         c.z = a.z + b.z;
+        //         c.w = a.x + b.w;
+        // }
+    }
+    if (index_in_grid < num_stragglers) {
+        auto idx = num_non_stragglers + index_in_grid;
+        c_tensor[idx] = a_tensor[idx] + b_tensor[idx];
+    }
+}
+
+// __global__ void _add_fast_f32(const Dense1d<float> a_tensor,
+//                               const Dense1d<float> b_tensor,
+//                               Dense1d<float> c_tensor, size_t N) {
+//     using load_as_dtype = float4;
+//     static constexpr size_t elem_sz = sizeof(float);
+//     static constexpr size_t bytes_per_thread = sizeof(load_as_dtype);
+//     static constexpr size_t elems_per_read = bytes_per_thread / elem_sz;
+//     static_assert(elems_per_read == 1 || elems_per_read == 2 ||
+//                   elems_per_read == 4);
+
+//     auto a_ptr = reinterpret_cast<const load_as_dtype*>(&a_tensor[0]);
+//     auto b_ptr = reinterpret_cast<const load_as_dtype*>(&b_tensor[0]);
+//     auto c_ptr = reinterpret_cast<load_as_dtype*>(&c_tensor[0]);
+
+//     auto total_vec_reads = N / elems_per_read;
+//     auto num_non_stragglers = total_vec_reads * elems_per_read;
+//     auto num_stragglers = N - num_non_stragglers;
+//     auto index_in_grid = blockIdx.x * blockDim.x + threadIdx.x;
+
+//     // grid stride loop to allow grid size smaller than numel; see:
+//     // https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
+//     auto grid_numel = blockDim.x * gridDim.x;
+//     for (int i = index_in_grid; i < total_vec_reads; i += grid_numel) {
+//         const load_as_dtype a = __ldg(&a_ptr[i]);
+//         const load_as_dtype b = __ldg(&b_ptr[i]);
+//         load_as_dtype c = c_ptr[i];
+
+//         c.x = a.x + b.x;
+//         c.y = a.y + b.y;
+//         c.z = a.z + b.z;
+//         c.w = a.w + b.w;
+//         c_ptr[i] = c;
+//         // switch (elems_per_read) {
+//         //     case 1:
+//         //         c.x = a.x + b.x;
+//         //     case 2:
+//         //         c.y = a.y + b.y;
+//         //     case 4:
+//         //         // makes it not compile with float2 loads since
+//         //         // `error: class "float2" has no member "z"`
+//         //         c.z = a.z + b.z;
+//         //         c.w = a.x + b.w;
+//         // }
+//     }
+//     if (index_in_grid < num_stragglers) {
+//         auto idx = num_non_stragglers + index_in_grid;
+//         c_tensor[idx] = a_tensor[idx] + b_tensor[idx];
+//     }
+// }
+
+// }  // anon namespace
 
 template<typename scalar_t>
 void _add_fast_static_bytes_per_kernel(const Dense1d<scalar_t> a,
@@ -150,6 +252,9 @@ void add_fast_wrapper(const at::Tensor in_a, const at::Tensor in_b,
     auto sm_count = num_cuda_cores();
     size_t max_threads = sm_count * 2048;  // highest occupancy possible
 
+    // TODO use bytes_per_thread
+
+    // block_size = min(32 * (N / 32), block_size);
     size_t num_blocks = div_round_up(N, block_size);
     num_blocks = min(num_blocks, max_threads / block_size);
     // dim3 grid_shape = num_blocks;
@@ -186,11 +291,16 @@ void add_fast_wrapper(const at::Tensor in_a, const at::Tensor in_b,
     const auto& the_type = in_a.type();
     switch (in_a.scalar_type()) {
     case at::ScalarType::Float:
-        using scalar_t = float;
+        using scalar_t = float; // for AS_DENSE macros
         // at::ScalarType _st = ::detail::scalar_type(the_type);
-        _add_fast_static_bytes_per_kernel<scalar_t>(
-            AS_DENSE_1D(in_a), AS_DENSE_1D(in_b), AS_DENSE_1D(out_c), N,
-            bytes_per_thread, num_blocks, block_size);
+        _add_fast_f32<<<num_blocks, block_size>>>(
+            &AS_DENSE_1D(in_a)[0],
+            &AS_DENSE_1D(in_b)[0],
+            &AS_DENSE_1D(out_c)[0],
+            N);
+        // _add_fast_static_bytes_per_kernel<scalar_t>(
+        //     AS_DENSE_1D(in_a), AS_DENSE_1D(in_b), AS_DENSE_1D(out_c), N,
+        //     bytes_per_thread, num_blocks, block_size);
         break;
     }
 
