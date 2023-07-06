@@ -2,7 +2,7 @@
 // run with:
 //  nvcc -O3 main.cu -o main.o && ./main.o
 // run on an A100 with fastmath optimizations (irrelevant for add) with:
-//  nvcc -O3 --use_fast_math -gencode arch=compute_80,code=compute_80 main.cu -o main.o && ./main.o
+//  nvcc -O3 --use_fast_math -gencode arch=compute_80,code=sm_80 main.cu -o main.o && ./main.o
 // to inspect register usage on an A100:
 //  nvcc --resource-usage --gpu-architecture=sm_80 --use_fast_math main.cu
 
@@ -15,7 +15,7 @@ inline size_t div_round_up(size_t x, size_t y) {
     return (x + y - 1) / y;
 }
 
-inline int num_cuda_cores() {
+inline int num_sms() {
     int deviceID;
     cudaDeviceProp props;
     cudaGetDevice(&deviceID);
@@ -27,7 +27,7 @@ inline int num_cuda_cores() {
 // guarantee a thread count proportional to the input size N
 inline int grid_size_for_block_size(size_t block_size, size_t N, size_t numel_per_thread=1) {
     auto numel = N / numel_per_thread;
-    auto sm_count = num_cuda_cores();
+    auto sm_count = num_sms();
     auto max_threads = sm_count * 2048;  // highest occupancy possible
     auto max_grid_size = div_round_up(max_threads, block_size);
     auto max_blocks_possible = div_round_up(numel, block_size);
@@ -37,7 +37,9 @@ inline int grid_size_for_block_size(size_t block_size, size_t N, size_t numel_pe
 __global__ void _add_fast_f32(const float* __restrict__ a_tensor,
                               const float* __restrict__ b_tensor,
                               float* __restrict__ c_tensor,
-                              uint32_t N) {
+                              uint32_t N,
+                              uint32_t total_vec_reads)
+{
     using load_as_dtype = float4;
     static constexpr uint32_t elem_sz = sizeof(float);
     static constexpr uint32_t bytes_per_thread = sizeof(load_as_dtype);
@@ -49,7 +51,7 @@ __global__ void _add_fast_f32(const float* __restrict__ a_tensor,
     auto b_ptr = reinterpret_cast<const load_as_dtype*>(&b_tensor[0]);
     auto c_ptr = reinterpret_cast<load_as_dtype*>(&c_tensor[0]);
 
-    auto total_vec_reads = N / elems_per_read;
+    // auto total_vec_reads = N / elems_per_read;
     auto num_non_stragglers = total_vec_reads * elems_per_read;
     auto num_stragglers = N - num_non_stragglers;
     auto index_in_grid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -74,10 +76,44 @@ __global__ void _add_fast_f32(const float* __restrict__ a_tensor,
     }
 }
 
-template <typename scalar_t>
-__global__ void _add_simple(const scalar_t* __restrict__ a,
-                            const scalar_t* __restrict__ b,
-                            scalar_t* __restrict__ out,
+__global__ void _add_fast_f32_even_multiple(const float* __restrict__ a_tensor,
+                                            const float* __restrict__ b_tensor,
+                                            float* __restrict__ c_tensor,
+                                            uint32_t total_vec_reads)
+{
+    using load_as_dtype = float4;
+    static constexpr uint32_t elem_sz = sizeof(float);
+    static constexpr uint32_t bytes_per_thread = sizeof(load_as_dtype);
+    static constexpr uint32_t elems_per_read = bytes_per_thread / elem_sz;
+    static_assert(elems_per_read == 1 || elems_per_read == 2 ||
+                  elems_per_read == 4);
+
+    auto a_ptr = reinterpret_cast<const load_as_dtype*>(&a_tensor[0]);
+    auto b_ptr = reinterpret_cast<const load_as_dtype*>(&b_tensor[0]);
+    auto c_ptr = reinterpret_cast<load_as_dtype*>(&c_tensor[0]);
+
+    auto index_in_grid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // grid stride loop to allow grid size smaller than numel; see:
+    // https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
+    auto grid_numel = blockDim.x * gridDim.x;
+    for (uint32_t i = index_in_grid; i < total_vec_reads; i += grid_numel) {
+        const load_as_dtype a = __ldg(&a_ptr[i]);
+        const load_as_dtype b = __ldg(&b_ptr[i]);
+        load_as_dtype c = c_ptr[i];
+
+        c.x = a.x + b.x;
+        c.y = a.y + b.y;
+        c.z = a.z + b.z;
+        c.w = a.w + b.w;
+        c_ptr[i] = c;
+    }
+}
+
+// template <typename scalar_t>
+__global__ void _add_simple(const float* __restrict__ a,
+                            const float* __restrict__ b,
+                            float* __restrict__ out,
                             uint32_t N)
 {
     auto index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -91,11 +127,11 @@ __global__ void _add_simple(const scalar_t* __restrict__ a,
 }
 
 int main() {
-    // constexpr size_t N = ((long)1) << 24; // works
-    constexpr size_t N = ((long)1) << 28;
+    constexpr size_t N = ((long)1) << 24;
+    // constexpr size_t N = ((long)1) << 28;
 
     // figure out block + grid sizes
-    int block_size = 256;
+    int block_size = 128;
     int numel_per_thread = 4;  // 4 for fast version
     auto grid_size = grid_size_for_block_size(block_size, N, numel_per_thread);
     std::cout << "grid_size:" << grid_size << " block_size: " << block_size << std::endl;
@@ -125,27 +161,50 @@ int main() {
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
 
-    cudaEventRecord(start);
-    _add_fast_f32<<<grid_size, block_size>>>(a_cu, b_cu, out_cu, N);
-    // _add_simple<float><<<div_round_up(N, block_size), block_size>>>(a_cu, b_cu, out_cu, N);
-    cudaEventRecord(stop);
-    cudaMemcpy(out.data(), out_cu, nbytes, cudaMemcpyDeviceToHost);
+    auto vectorized_elems_per_read = 4;
+    auto total_vec_reads = N / vectorized_elems_per_read;
+    // auto num_non_stragglers = total_vec_reads * elems_per_read;
 
-    cudaEventSynchronize(stop);
+    // uncomment whichever of these variants you want to measure; they all do
+    // about the same for large enough inputs, attaining > 80% of peak membw
+    auto f = [&] { _add_simple<<<div_round_up(N, block_size), block_size>>>(a_cu, b_cu, out_cu, N); };
+    // auto f = [&] { _add_fast_f32<<<div_round_up(total_vec_reads, block_size), block_size>>>(a_cu, b_cu, out_cu, N, total_vec_reads); };
+    // auto f = [&] { _add_fast_f32<<<grid_size, block_size>>>(a_cu, b_cu, out_cu, N, total_vec_reads); };
+    // auto f = [&] { _add_fast_f32_even_multiple<<<grid_size * 4, block_size>>>(a_cu, b_cu, out_cu, total_vec_reads); };
+    // auto f = [&] { _add_fast_f32_even_multiple<<<div_round_up(total_vec_reads, block_size), block_size>>>(a_cu, b_cu, out_cu, total_vec_reads); };
+
+    auto num_warmup_iters = 3;
+    auto num_trials = 5;
+    for (int t = 0; t < num_warmup_iters; t++) {
+        f();
+    }
+    float t_total = 0;
     float milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, stop);
-    printf("milliseconds: %f", milliseconds);
+    for (int t = 0; t < num_trials; t++) {
+        cudaEventRecord(start);
+        f();
+        cudaEventRecord(stop);
+        cudaEventSynchronize(stop);
+        cudaEventElapsedTime(&milliseconds, start, stop);
+        t_total += milliseconds;
+    }
+    printf("milliseconds: %f", t_total / num_trials);
 
+    cudaMemcpy(out.data(), out_cu, nbytes, cudaMemcpyDeviceToHost);
     uint32_t num_errors = 0;
     int64_t first_err_index = -1;
     for (size_t i = 0; i < N; i++) {
-        // printf("%.1f ", out[i]);
-        if (out[i] != 1.) {
+        if (N <= 16) {
+            printf("%.1f ", out[i]);
+        }
+        if (out[i] != a[i] + b[i]) {
             if (num_errors == 0) {
                 first_err_index = i;
             }
             num_errors++;
-        //     printf("%d: %.0f\n", i, out[i]);
+            if (num_errors < 10) {
+                printf("%d: %.0f\n", i, out[i]);
+            }
         }
     }
     printf("\nTotal errors: %u / %ld; first at %ld\n", num_errors, (long)N, first_err_index);
