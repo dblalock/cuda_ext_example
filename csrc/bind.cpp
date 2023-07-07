@@ -26,18 +26,18 @@ void add(at::Tensor in_a, at::Tensor in_b, at::Tensor out_c,
 
 // forward declare public function from cuda files
 void add_fast_wrapper(const at::Tensor in_a, const at::Tensor in_b,
-                      at::Tensor out_c, size_t block_size,
-                      size_t bytes_per_thread);
+                      at::Tensor out_c, size_t block_size, int grid_size);
 
 void add_fast(at::Tensor in_a, at::Tensor in_b, at::Tensor out_c,
-              int block_size = 64, int bytes_per_thread = 4) {
+              int block_size, int grid_size)
+{
     CHECK_INPUT(in_a);
     CHECK_INPUT(in_b);
     CHECK_INPUT(out_c);
     // TORCH_CHECK(block_size % (bytes_per_thread * 32 /
     // sizeof(in_a.type().dtype()) == 0, "Block size must be large enough to
     // accomodate 32 loads of size " #bytes_per_thread )
-    add_fast_wrapper(in_a, in_b, out_c, block_size, bytes_per_thread);
+    add_fast_wrapper(in_a, in_b, out_c, block_size, grid_size);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {

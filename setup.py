@@ -97,6 +97,8 @@ if 'cu' in torch.__version__:
     cc_flag.append("arch=compute_70,code=sm_70")
     cc_flag.append("-gencode")
     cc_flag.append("arch=compute_80,code=sm_80")
+    # cc_flag.append("-gencode")  # uncomment to generate ptx code
+    # cc_flag.append("arch=compute_80,code=compute_80")
     if bare_metal_version >= Version("11.1"):
         cc_flag.append("-gencode")
         cc_flag.append("arch=compute_86,code=sm_86")
