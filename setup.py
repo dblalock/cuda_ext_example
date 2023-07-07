@@ -144,7 +144,8 @@ setup(
     version='0.0.1',
     author='dblalock',
     author_email='davis@mosaicml.com',
-    description="simple example project that builds a PyTorch CUDA extension",
+    readme="README.md",
+    description="Simple example project that builds a PyTorch CUDA extension",
     url='https://github.com/dblalock/cuda_ext_example',
     packages=find_packages(exclude=['tests*']),
     classifiers=[
