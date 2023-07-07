@@ -34,9 +34,6 @@ void add_fast(at::Tensor in_a, at::Tensor in_b, at::Tensor out_c,
     CHECK_INPUT(in_a);
     CHECK_INPUT(in_b);
     CHECK_INPUT(out_c);
-    // TORCH_CHECK(block_size % (bytes_per_thread * 32 /
-    // sizeof(in_a.type().dtype()) == 0, "Block size must be large enough to
-    // accomodate 32 loads of size " #bytes_per_thread )
     add_fast_wrapper(in_a, in_b, out_c, block_size, grid_size);
 }
 

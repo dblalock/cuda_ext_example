@@ -61,12 +61,12 @@ inline int num_sms() {
 
 // note that this requires you to do a grid-stride loop, since it doesn't
 // guarantee a thread count proportional to the input size N
-inline int grid_size_for_block_size(size_t block_size, size_t N, size_t numel_per_thread=1) {
+inline int grid_size_for_block_size(size_t block_size, size_t N,
+                                    size_t numel_per_thread)
+{
     constexpr size_t kMaxBlocksPerSM = 32;
-    auto numel = N / numel_per_thread;
-    auto sm_count = num_sms();
-    auto max_simultaneous_blocks = sm_count * kMaxBlocksPerSM;
-    auto max_blocks_of_work = div_round_up(numel, block_size);
+    auto max_simultaneous_blocks = kMaxBlocksPerSM * num_sms();
+    auto max_blocks_of_work = div_round_up(N, block_size * numel_per_thread);
     return min(max_simultaneous_blocks, max_blocks_of_work);
 }
 
@@ -81,6 +81,7 @@ void add_fast_wrapper(const at::Tensor in_a, const at::Tensor in_b,
     int num_blocks = grid_size;
     if (grid_size <= 0) {
         num_blocks = grid_size_for_block_size(block_size, N, numel_per_thread);
+        // num_blocks = 108 * 32; // same value, but code runs faster...?
     }
 
     const auto& the_type = in_a.type();
