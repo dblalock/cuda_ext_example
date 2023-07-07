@@ -42,7 +42,6 @@ def time_elemwise_op(f: Callable,
 
 
 def main():
-    # shape = (1 << 14, 1 << 14)
     shape = (1 << 28,)
     times_torch = time_elemwise_op(torch.add, shape=shape)
     times_simple = time_elemwise_op(ours.my_add, shape=shape)
@@ -62,6 +61,5 @@ def main():
 
 
 if __name__ == '__main__':
-    # np.set_printoptions(precision=3, suppress=True)
     np.set_printoptions(formatter={'float': lambda x: f'{x:.4f}'})
     main()

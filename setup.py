@@ -110,11 +110,9 @@ if 'cu' in torch.__version__:
         CUDAExtension(
             name='_my_cuda_kernels',
             sources=[
-                'csrc/bind.cpp', # public API via pybind
-                # simple addition kernel
-                'csrc/add_cuda.cu',
-                # fancy addition kernel
-                'csrc/add_fast_cuda.cu',
+                'csrc/bind.cpp',  # public API via pybind
+                'csrc/add_cuda.cu',  # simple addition kernel
+                'csrc/add_fast_cuda.cu',  # fancy addition kernel
             ],
             extra_compile_args={
                 'cxx': ['-O3'] + generator_flag,

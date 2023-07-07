@@ -1,9 +1,11 @@
 // This file is just here to help with debugging. You're gonna need it.
-// run with:
+// Run with:
 //  nvcc -O3 main.cu -o main.o && ./main.o
-// run on an A100 with fastmath optimizations (irrelevant for add) with:
+//
+// Run on an A100 with fastmath optimizations (irrelevant for add) with:
 //  nvcc -O3 --use_fast_math -gencode arch=compute_80,code=sm_80 main.cu -o main.o && ./main.o
-// to inspect register usage on an A100:
+//
+// To inspect register usage on an A100:
 //  nvcc --resource-usage --gpu-architecture=sm_80 --use_fast_math main.cu
 
 #include <stdio.h>
@@ -25,13 +27,15 @@ inline int num_sms() {
 
 // note that this requires you to do a grid-stride loop, since it doesn't
 // guarantee a thread count proportional to the input size N
-inline int grid_size_for_block_size(size_t block_size, size_t N, size_t numel_per_thread=1) {
+inline int grid_size_for_block_size(size_t block_size, size_t N,
+                                    size_t numel_per_thread=1)
+{
+    constexpr size_t kMaxBlocksPerSM = 32;
     auto numel = N / numel_per_thread;
     auto sm_count = num_sms();
-    auto max_threads = sm_count * 2048;  // highest occupancy possible
-    auto max_grid_size = div_round_up(max_threads, block_size);
-    auto max_blocks_possible = div_round_up(numel, block_size);
-    return min(max_blocks_possible, max_grid_size);
+    auto max_simultaneous_blocks = sm_count * kMaxBlocksPerSM;
+    auto max_blocks_of_work = div_round_up(numel, block_size);
+    return min(max_simultaneous_blocks, max_blocks_of_work);
 }
 
 __global__ void _add_fast_f32(const float* __restrict__ a_tensor,
