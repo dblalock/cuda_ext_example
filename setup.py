@@ -139,12 +139,30 @@ if 'cu' in torch.__version__:
 else:
     warnings.warn('Warning: No CUDA devices; cuda code will not be compiled.')
 
+# convert README to long description on PyPI, optionally skipping certain
+# marked sections if present (e.g., for coverage / code quality badges)
+with open('README.md', 'r', encoding='utf-8') as fh:
+    long_description = fh.read()
+while True:
+    start_tag = '<!-- LONG_DESCRIPTION_SKIP_START -->'
+    end_tag = '<!-- LONG_DESCRIPTION_SKIP_END -->'
+    start = long_description.find(start_tag)
+    end = long_description.find(end_tag)
+    if start == -1:
+        assert end == -1, 'Skipped section starts and ends imbalanced'
+        break
+    else:
+        assert end != -1, 'Skipped section starts and ends imbalanced'
+        long_description = long_description[:start] + long_description[end + len(end_tag):]
+
+
 setup(
     name='cuda_ext_example',
     version='0.0.1',
     author='dblalock',
     author_email='davis@mosaicml.com',
-    readme="README.md",
+    long_description=long_description,
+    long_description_content_type='text/markdown',
     description="Simple example project that builds a PyTorch CUDA extension",
     url='https://github.com/dblalock/cuda_ext_example',
     packages=find_packages(exclude=['tests*']),
