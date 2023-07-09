@@ -1,6 +1,6 @@
 # build requirements
 [build-system]
-requires = ["setuptools < 68.0.0", "packaging >= 21.0.0", "torch >= 1.13.1"]
+requires = ["setuptools < 68.0.0", "packaging >= 21.0.0", "torch >= 2.0.1"]
 build-backend = "setuptools.build_meta"
 
 # iSort
