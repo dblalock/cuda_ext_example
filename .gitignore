@@ -116,3 +116,7 @@ joblib/
 # Numbe function cache
 __pycache__
 
+wheelhouse/
+objs/
+*-venv/
+.vscode/
