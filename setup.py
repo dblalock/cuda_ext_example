@@ -158,7 +158,7 @@ while True:
 
 setup(
     name='cuda_ext_example',
-    version='0.0.1',
+    version='0.0.2',
     author='dblalock',
     author_email='davis@mosaicml.com',
     long_description=long_description,
